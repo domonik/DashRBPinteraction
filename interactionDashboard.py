@@ -25,6 +25,8 @@ templa = pio.templates["plotly_white"].update({"layout": {
 
 }})
 
+dropdown_style = {'width': "100%", "margin": "auto", }
+tr_style = {'width': "50%", "margin": "auto", "padding": "5px"}
 
 def get_table(filter_columns):
 
@@ -39,25 +41,34 @@ def get_table(filter_columns):
     return table
 
 def dropdown_menues():
-    menues = html.Table([html.Tr(dcc.Dropdown(id="slct_protein",
-                           options=opts,
-                           multi=False,
-                           value=selection[0],
-                           style=dropdown_style
-                           ), style=tr_style),
-              html.Tr(dcc.Dropdown(id="slct_cellline",
-                           options=cellline_opts,
-                           value=cellline_opts[0]["value"],
-                           style=dropdown_style
-                           ), style=tr_style),
-              html.Tr(dcc.Dropdown(id="slct_region",
-                           options=region_opts,
-                           value=region_opts[0]["value"],
-                           style=dropdown_style
-                           ), style=tr_style)
-    ], style={"margin": "auto", "width": "70%"})
+    dropdowns = [
+        dcc.Dropdown(id="slct_protein",
+                     options=opts,
+                     multi=False,
+                     value=selection[0],
+                     style=dropdown_style),
+        dcc.Dropdown(id="slct_cellline",
+                     options=cellline_opts,
+                     value=cellline_opts[0]["value"],
+                     style=dropdown_style
+                     ),
+        dcc.Dropdown(id="slct_region",
+                     options=region_opts,
+                     value=region_opts[0]["value"],
+                     style=dropdown_style
+                     )
 
-    return menues
+    ]
+    m = html.Table(
+        html.Tr(
+            [html.Td(html.Div(col, style={"width": "100%"}), className="selection-table_interactive") for col in dropdowns]
+        ),
+        id="selection-table", style={"width": "80%", "margin": "auto"}
+
+    )
+
+
+    return m
 
 
 with open("pickled_full_interaction_table400.pckl", "rb") as f:
@@ -84,8 +95,7 @@ for entry in selection:
         if ct >= len(PLOTLY_COLORS):
             ct = 0
 
-dropdown_style = {'width': "50%", "margin": "auto", }
-tr_style = {'width': "50%", "margin": "auto", "padding": "5px"}
+
 
 
 app.layout = html.Div([
@@ -120,14 +130,18 @@ app.layout = html.Div([
 def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax, filter_value, filter_size, cutoff, switch):
     container = "{} Interactions".format(option_slctd)
     viewmode = switch % 2
+    if viewmode == 0:
+        y_axis_label = "# of interactions / max # of interactions"
+    else:
+        y_axis_label = "# of interactions"
     if filter_value is None:
         filter_value = 0
     if inputmin is None:
         inputmin = 0
     if inputmax is None:
         inputmax = np.inf
-    if filter_size is None or filter_size <= 0:
-        filter_size = 1
+    if filter_size is None or filter_size < 0:
+        filter_size = 0
     filter_size = int(filter_size)
     if cutoff is None or cutoff < 0:
         cutoff = 0
@@ -142,15 +156,16 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
     if len(dff) == 0:
         container = "{} {} seems to be missing".format(option_slctd, cellline_slctd)
     for i in range(len(dff)):
-        interactions = dff["interactions"].iloc[i]
+        data = dff.iloc[i]
+        interactions = data["interactions"]
         if viewmode == 0 and interactions[-1] != 0:
             y = interactions / interactions[-1]
         else:
             y = interactions
-        max_i = dff["interactions"].iloc[i][-1]
-        name = dff["protein2"].iloc[i]
-        cellline = dff["protein2_cellline"].iloc[i]
-        name_ext = dff["protein2"].iloc[i] + ":" + str(max_i)
+        max_i = data["interactions"][-1]
+        name = data["protein2"]
+        cellline = data["protein2_cellline"]
+        name_ext = name + "-" + cellline + ":" + str(max_i)
 
         diff = np.diff(y)
         diff_window = get_sum(diff, filter_size)
@@ -165,16 +180,18 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
     for element in to_plot:
         fig.add_trace(element)
     fig.layout.template = "plotly_white"
-    fig.update_layout(hoverlabel=dict(namelength=0))
+    fig.update_layout(hoverlabel=dict(namelength=0),
+                      xaxis_title="distance [nt]",
+                      yaxis_title=y_axis_label
+                      )
     return container, fig
 
 
 def get_sum(arr, dif):
     result_array = np.zeros(len(arr))
     for x in range(len(arr)):
-        window = (x - dif, x + dif + 1)
+        window = (x, x + dif + 1)
         if window[0] < 0:
-
             area = arr[0:window[1]]
         elif window[1] > len(arr):
             area = arr[window[0]:]
