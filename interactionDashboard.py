@@ -12,33 +12,68 @@ import plotly.io as pio
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
 
-filter_columns = ["input_min", "input_max", "filter_value", "filter_size", "cutoff"]
+STEPSIZE = 5
 PLOTLY_COLORS = px.colors.qualitative.Light24
 del PLOTLY_COLORS[12]
-pio.templates["plotly_dark_custom"] = pio.templates["plotly_dark"]
 
-templa = pio.templates["plotly_white"].update({"layout": {
+pio.templates["plotly_white"].update({"layout": {
     # e.g. you want to change the background to transparent
     'paper_bgcolor': 'rgba(0,0,0,0)',
     'plot_bgcolor': ' rgba(0,0,0,0)',
     "font": dict(color="white")
-
 }})
+
+# load data file
+with open("pickled_full_interaction_table400.pckl", "rb") as f:
+    df = pickle.load(f)
+df = df.sort_values(by=['protein1', "protein2"])
+
+# set x-axis
+x_axis = np.array(list(range(len(df["interactions"].iloc[0])))) * STEPSIZE
+selection = sorted(df["protein1"].unique())
+opts = []
+cellline_selection = sorted(df["protein1_cellline"].unique())
+cellline_opts = [{"label": entry, "value": entry} for entry in cellline_selection]
+region_opts = [{"label": entry, "value": entry} for entry in sorted(df["region"].unique())]
+
+colordict = dict()
+ct = 0
+for entry in selection:
+    opt = {"label": entry, "value": entry}
+    opts.append(opt)
+    if entry not in colordict:
+        colordict[entry] = dict()
+    for cellline in cellline_selection:
+        colordict[entry][cellline] = PLOTLY_COLORS[ct]
+        ct += 1
+        if ct >= len(PLOTLY_COLORS):
+            ct = 0
 
 dropdown_style = {'width': "100%", "margin": "auto", }
 tr_style = {'width': "50%", "margin": "auto", "padding": "5px"}
 
-def get_table(filter_columns):
 
+def get_table():
+    filter_c = {
+        "input_min": "minimum interactions at max nt",
+        "input_max": "maximum interactions at max nt",
+        "filter_value": "minimum slope within a window set at filter_size",
+        "filter_size": "window used to calculate the minimum slope. 0 is default. Value multiplied by " + str(STEPSIZE),
+        "cutoff": "filters ignore the first n * " + str(STEPSIZE) + " nucleotides"
+    }
     table = html.Table(
-        [html.Tr([html.Th(html.Div(col, className="table-header")) for col in filter_columns])] +
+        [html.Tr([html.Th(html.Div(col, className="table-header"), title=filter_c[col]) for col in filter_c])] +
         [html.Tr(
-            [html.Td(html.Div(dcc.Input(id="{}".format(inp), type="number", placeholder="{}".format(inp), style={"width": "100%"})) , className="filter_table_interactive") for inp in
-             filter_columns] +
-            [html.Div(dbc.Button("Switch mode", id="switch_button", color="light", n_clicks=0, style={"white-space": "nowrap", "margin": "auto"}), className="filter_table_interactive")]
+            [html.Td(html.Div(
+                dcc.Input(id="{}".format(inp), type="number", placeholder="{}".format(inp), style={"width": "100%"})),
+                className="filter_table_interactive") for inp in filter_c] +
+            [html.Div(dbc.Button("Switch mode", id="switch_button", color="light", n_clicks=0,
+                                 style={"white-space": "nowrap", "margin": "auto"}),
+                      className="filter_table_interactive")]
         )], id="filter-table", style={"margin": "auto", "width": "80%"}
     )
     return table
+
 
 def dropdown_menues():
     dropdowns = [
@@ -59,43 +94,16 @@ def dropdown_menues():
                      )
 
     ]
-    m = html.Table(
+    menu = html.Table(
         html.Tr(
-            [html.Td(html.Div(col, style={"width": "100%"}), className="selection-table_interactive") for col in dropdowns]
+            [html.Td(html.Div(col, style={"width": "100%"}), className="selection-table_interactive") for col in
+             dropdowns]
         ),
         id="selection-table", style={"width": "80%", "margin": "auto"}
 
     )
 
-
-    return m
-
-
-with open("pickled_full_interaction_table400.pckl", "rb") as f:
-    df = pickle.load(f)
-df = df.sort_values(by=['protein1', "protein2"])
-x_axis = np.array(list(range(len(df["interactions"].iloc[0])))) * 5
-selection = sorted(df["protein1"].unique())
-opts = []
-cellline_selection = sorted(df["protein1_cellline"].unique())
-cellline_opts = [{"label": entry, "value": entry} for entry in cellline_selection]
-region_opts = [{"label": entry, "value": entry} for entry in sorted(df["region"].unique())]
-
-
-colordict = dict()
-ct = 0
-for entry in selection:
-    opt = {"label": entry, "value": entry}
-    opts.append(opt)
-    if entry not in colordict:
-        colordict[entry] = dict()
-    for cellline in cellline_selection:
-        colordict[entry][cellline] = PLOTLY_COLORS[ct]
-        ct += 1
-        if ct >= len(PLOTLY_COLORS):
-            ct = 0
-
-
+    return menu
 
 
 app.layout = html.Div([
@@ -105,9 +113,8 @@ app.layout = html.Div([
 
     html.Div([html.H2(id='output_container', children=[], style={"text-align": "center"}),
               dcc.Graph(id='plotly_graph', figure={"layout": {"height": 700}}),
-              get_table(filter_columns)], className="plotly-graph"),
-    html.Br(),
-
+              get_table()], className="plotly-graph"),
+    html.Div("", className="databox")
 
 ], id="wrapper"
 )
@@ -127,7 +134,8 @@ app.layout = html.Div([
      Input(component_id="switch_button", component_property="n_clicks"),
      ]
 )
-def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax, filter_value, filter_size, cutoff, switch):
+def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax, filter_value, filter_size, cutoff,
+                 switch):
     container = "{} Interactions".format(option_slctd)
     viewmode = switch % 2
     if viewmode == 0:
@@ -140,8 +148,8 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
         inputmin = 0
     if inputmax is None:
         inputmax = np.inf
-    if filter_size is None or filter_size < 0:
-        filter_size = 0
+    if filter_size is None or filter_size <= 0:
+        filter_size = 1
     filter_size = int(filter_size)
     if cutoff is None or cutoff < 0:
         cutoff = 0
@@ -155,6 +163,8 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
     to_plot = []
     if len(dff) == 0:
         container = "{} {} seems to be missing".format(option_slctd, cellline_slctd)
+        fig.update_yaxes(range=[0, 1])
+        fig.update_xaxes(range=[0, 400])
     for i in range(len(dff)):
         data = dff.iloc[i]
         interactions = data["interactions"]
@@ -182,7 +192,7 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
     fig.layout.template = "plotly_white"
     fig.update_layout(hoverlabel=dict(namelength=0),
                       xaxis_title="distance [nt]",
-                      yaxis_title=y_axis_label
+                      yaxis_title=y_axis_label,
                       )
     return container, fig
 
@@ -190,7 +200,7 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
 def get_sum(arr, dif):
     result_array = np.zeros(len(arr))
     for x in range(len(arr)):
-        window = (x, x + dif + 1)
+        window = (x, x + dif)
         if window[0] < 0:
             area = arr[0:window[1]]
         elif window[1] > len(arr):
@@ -203,4 +213,4 @@ def get_sum(arr, dif):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False, port=8080, host="0.0.0.0")

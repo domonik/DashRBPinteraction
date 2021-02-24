@@ -98,7 +98,7 @@
 
 
 
-@media screen and (max-width:767px) {
+@media screen and (max-width:1080px) {
     table tr > *{
         display: block;
         padding: 5px;
