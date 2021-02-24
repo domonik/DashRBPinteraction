@@ -38,46 +38,63 @@ def get_table(filter_columns):
     )
     return table
 
+def dropdown_menues():
+    menues = html.Table([html.Tr(dcc.Dropdown(id="slct_protein",
+                           options=opts,
+                           multi=False,
+                           value=selection[0],
+                           style=dropdown_style
+                           ), style=tr_style),
+              html.Tr(dcc.Dropdown(id="slct_cellline",
+                           options=cellline_opts,
+                           value=cellline_opts[0]["value"],
+                           style=dropdown_style
+                           ), style=tr_style),
+              html.Tr(dcc.Dropdown(id="slct_region",
+                           options=region_opts,
+                           value=region_opts[0]["value"],
+                           style=dropdown_style
+                           ), style=tr_style)
+    ], style={"margin": "auto", "width": "70%"})
+
+    return menues
+
 
 with open("pickled_full_interaction_table400.pckl", "rb") as f:
     df = pickle.load(f)
+df = df.sort_values(by=['protein1', "protein2"])
 x_axis = np.array(list(range(len(df["interactions"].iloc[0])))) * 5
 selection = sorted(df["protein1"].unique())
-cellline_selection = sorted(df["protein1_cellline"])
 opts = []
+cellline_selection = sorted(df["protein1_cellline"].unique())
 cellline_opts = [{"label": entry, "value": entry} for entry in cellline_selection]
+region_opts = [{"label": entry, "value": entry} for entry in sorted(df["region"].unique())]
+
 
 colordict = dict()
 ct = 0
 for entry in selection:
     opt = {"label": entry, "value": entry}
     opts.append(opt)
+    if entry not in colordict:
+        colordict[entry] = dict()
     for cellline in cellline_selection:
-        colordict[entry + "-" + cellline] = PLOTLY_COLORS[ct]
+        colordict[entry][cellline] = PLOTLY_COLORS[ct]
         ct += 1
         if ct >= len(PLOTLY_COLORS):
             ct = 0
+
+dropdown_style = {'width': "50%", "margin": "auto", }
+tr_style = {'width': "50%", "margin": "auto", "padding": "5px"}
 
 
 app.layout = html.Div([
 
     html.Div(html.H1("Protein Interaction Dasboard", style={'text-align': 'center'}), className="page-header"),
-    html.Div([dcc.Dropdown(id="slct_proteinr",
-                 options=opts,
-                 multi=False,
-                 value=selection[0],
-                 style={'width': "50%", "margin": "auto"}
-                 ),
-              dcc.Dropdown(id="slct_cellline",
-                           options=cellline_opts,
-                           value=cellline_selection[0],
-                           )
-
-
-              ], className="databox"),
+    html.Div(dropdown_menues(), className="databox"),
 
     html.Div([html.H2(id='output_container', children=[], style={"text-align": "center"}),
-        dcc.Graph(id='plotly_graph', figure={"layout": {"height": 700}}),
+              dcc.Graph(id='plotly_graph', figure={"layout": {"height": 700}}),
               get_table(filter_columns)], className="plotly-graph"),
     html.Br(),
 
@@ -91,6 +108,7 @@ app.layout = html.Div([
      Output(component_id='plotly_graph', component_property='figure')],
     [Input(component_id='slct_protein', component_property='value'),
      Input(component_id="slct_cellline", component_property="value"),
+     Input(component_id="slct_region", component_property="value"),
      Input(component_id="input_min", component_property="value"),
      Input(component_id="input_max", component_property="value"),
      Input(component_id="filter_value", component_property="value"),
@@ -99,7 +117,7 @@ app.layout = html.Div([
      Input(component_id="switch_button", component_property="n_clicks"),
      ]
 )
-def update_graph(option_slctd, cellline_slctd, inputmin, inputmax, filter_value, filter_size, cutoff, switch):
+def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax, filter_value, filter_size, cutoff, switch):
     container = "{} Interactions".format(option_slctd)
     viewmode = switch % 2
     if filter_value is None:
@@ -110,30 +128,37 @@ def update_graph(option_slctd, cellline_slctd, inputmin, inputmax, filter_value,
         inputmax = np.inf
     if filter_size is None or filter_size <= 0:
         filter_size = 1
+    filter_size = int(filter_size)
     if cutoff is None or cutoff < 0:
         cutoff = 0
     dff = df.copy()
+    dff = dff[dff["region"] == region_slctd]
+
     dff = dff[dff["protein1"] == option_slctd]
     dff = dff[dff["protein1_cellline"] == cellline_slctd]
 
     fig = go.Figure()
     to_plot = []
+    if len(dff) == 0:
+        container = "{} {} seems to be missing".format(option_slctd, cellline_slctd)
     for i in range(len(dff)):
-        if viewmode == 0:
-            y = dff["interactions"].iloc[i]
+        interactions = dff["interactions"].iloc[i]
+        if viewmode == 0 and interactions[-1] != 0:
+            y = interactions / interactions[-1]
         else:
-            y = dff["interactions"].iloc[i]
-        num_i = dff["interactions"].iloc[i][-1]
+            y = interactions
+        max_i = dff["interactions"].iloc[i][-1]
         name = dff["protein2"].iloc[i]
-        name_ext = dff["protein2"].iloc[i] + ":" + str(num_i)
+        cellline = dff["protein2_cellline"].iloc[i]
+        name_ext = dff["protein2"].iloc[i] + ":" + str(max_i)
 
-        diff = dff["interactions"].iloc[i]
+        diff = np.diff(y)
         diff_window = get_sum(diff, filter_size)
         max_diff = max(diff_window[cutoff:])
-        if inputmax >= num_i >= inputmin:
+        if inputmax >= max_i >= inputmin:
             if max_diff > filter_value:
                 to_plot.append(go.Scatter(x=x_axis, y=y, mode="lines", name=name_ext, hovertext=name_ext,
-                                          line={"width": 4, "color": colordict[name]}))
+                                          line={"width": 4, "color": colordict[name][cellline]}))
             else:
                 fig.add_trace(go.Scatter(x=x_axis, y=y, mode="lines", name=name_ext, hovertext=name_ext,
                                          line={"color": "grey"}))
