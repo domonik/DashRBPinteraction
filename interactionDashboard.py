@@ -6,7 +6,7 @@ import dash  # (version 1.12.0) pip install dash
 import dash_core_components as dcc
 import dash_html_components as html
 import dash_bootstrap_components as dbc
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 import numpy as np
 import plotly.io as pio
 
@@ -23,7 +23,7 @@ pio.templates["plotly_white"].update({"layout": {
     "font": dict(color="white")
 }})
 
-# load data file
+# load interaction window data file
 with open("pickled_full_interaction_table400.pckl", "rb") as f:
     df = pickle.load(f)
 df = df.sort_values(by=['protein1', "protein2"])
@@ -48,6 +48,57 @@ for entry in selection:
         ct += 1
         if ct >= len(PLOTLY_COLORS):
             ct = 0
+
+# load GO Analysis table
+with open("./goa_mastertable_no_prop_all.pckl", "rb") as f:
+    goa_table = pickle.load(f)
+    goa_table = goa_table[goa_table["p_fdr_bh"] < 0.05]
+    goa_table = goa_table[goa_table["NS"] == "BP"]
+    goa_table = goa_table[goa_table["enrichment"] == "e"]
+
+
+
+
+
+prot_dict = dict()
+for el in goa_table.protein.unique():
+    prot_dict[el] = {}
+    for cel in goa_table.cellline.unique():
+        prot_dict[el][cel] = set()
+for x in range(len(goa_table)):
+    data = goa_table.iloc[x]
+    protein = data["protein"]
+    go_term = data["# GO"]
+    id = data["id"]
+    ns = data["NS"]
+    cellline = data["cellline"]
+    prot_dict[protein][cellline].add(go_term)
+
+# values = []
+# name = []
+# for protein in prot_dict:
+#     for cellline in prot_dict[protein]:
+#
+#         for slct_protein in prot_dict:
+#             for slct_cellline in prot_dict[slct_protein]:
+#                 if protein != slct_protein and cellline != slct_cellline:
+#                     comp = prot_dict[protein][cellline]
+#                     sel = prot_dict[slct_protein][slct_cellline]
+#                     wlen = len(sel) + len(comp)
+#                     val2 = len(sel.intersection(comp))
+#                     if wlen != 0:
+#                         val = len(sel.intersection(comp)) / wlen
+#
+#                     else:
+#                         val = 0
+#
+#                     bla = "{0}-{1}:{2}-{3}".format(protein, cellline, slct_protein, slct_cellline)
+#                     values.append((val2, bla))
+#                     name.append(bla)
+# arr = np.array(values, dtype=[("x", int), ("y", "S30")])
+# arr.sort(order="x")
+# x = 0
+
 
 dropdown_style = {'width': "100%", "margin": "auto", }
 tr_style = {'width': "50%", "margin": "auto", "padding": "5px"}
@@ -80,7 +131,7 @@ def dropdown_menues():
         dcc.Dropdown(id="slct_protein",
                      options=opts,
                      multi=False,
-                     value=selection[0],
+                     value="BUD13",
                      style=dropdown_style),
         dcc.Dropdown(id="slct_cellline",
                      options=cellline_opts,
@@ -114,7 +165,15 @@ app.layout = html.Div([
     html.Div([html.H2(id='output_container', children=[], style={"text-align": "center"}),
               dcc.Graph(id='plotly_graph', figure={"layout": {"height": 700}}),
               get_table()], className="plotly-graph"),
-    html.Div("", className="databox")
+    html.Div(
+        [html.H2(id='goa_output_container', children=[], style={"text-align": "center"}),
+         dcc.Graph(id='goa-graph', figure={"layout": {"width": "100%"}}),
+         html.Div(
+             dbc.Button("Switch mode", id="goa_switch_button", color="light", n_clicks=0,
+                        style={"white-space": "nowrap", "margin": "auto"}),
+             style={"display": "flex", "align-items": "center", "justify-content": "center"})
+         ]
+        , className="databox")
 
 ], id="wrapper"
 )
@@ -197,6 +256,74 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
     return container, fig
 
 
+@app.callback(
+    [Output(component_id='goa_output_container', component_property='children'),
+     Output(component_id='goa-graph', component_property='figure'),
+     ],
+    [Input(component_id='slct_protein', component_property='value'),
+     Input(component_id="slct_cellline", component_property="value"),
+     Input(component_id="goa_switch_button", component_property="n_clicks"),
+
+     ],
+    [State("goa-graph", "relayoutData")]
+)
+def update_goanalysis(slct_protein, slct_cellline, nclicks, relayout_data):
+    container = "{} GO-terms Intersection Enrichment".format(slct_protein)
+
+
+    heatline = []
+    names = []
+    heatline2 = []
+    if slct_protein in prot_dict:
+        sel = prot_dict[slct_protein][slct_cellline]
+
+        for protein in prot_dict:
+            for cellline in prot_dict[protein]:
+                if protein != slct_protein and cellline != slct_cellline:
+                    comp = prot_dict[protein][cellline]
+                    wlen = len(sel) + len(comp)
+                    if wlen != 0:
+                        val = len(sel.intersection(comp)) / wlen
+                        val2 = len(sel.intersection(comp))
+                    else:
+                        val = 0
+                    heatline.append(val)
+                    heatline2.append(val2)
+                    names.append(protein + "-" + cellline)
+        if nclicks % 2 == 1:
+            heatline = heatline2
+
+        heatline = [heatline]
+        heatline2 = [heatline2]
+        fig = go.Figure()
+        fig.add_trace(
+            go.Heatmap(z=heatline, y=[slct_protein + "-" + slct_cellline], x=names, zmin=0, zauto=False,
+                       colorscale="Hot", colorbar=go.heatmap.ColorBar(ticklen=100, tickwidth=100, tickangle=90),
+                       zmax=np.max(heatline), ))
+
+
+
+    else:
+        heatline = [[0, 2, 1]]
+        fig = px.imshow(heatline)
+    # fig.update_traces(showscale=False)
+    fig.layout.template = "plotly_white"
+
+    if relayout_data:
+        if 'xaxis.range[0]' in relayout_data:
+            fig['layout']['xaxis']['range'] = [
+                relayout_data['xaxis.range[0]'],
+                relayout_data['xaxis.range[1]']
+            ]
+        if 'yaxis.range[0]' in relayout_data:
+            fig['layout']['yaxis']['range'] = [
+                relayout_data['yaxis.range[0]'],
+                relayout_data['yaxis.range[1]']
+            ]
+
+    return container, fig
+
+
 def get_sum(arr, dif):
     result_array = np.zeros(len(arr))
     for x in range(len(arr)):
@@ -213,4 +340,4 @@ def get_sum(arr, dif):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False, port=8080, host="0.0.0.0")
+    app.run_server(debug=True, port=8080, host="0.0.0.0")
