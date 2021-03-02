@@ -56,9 +56,13 @@ with open("./goa_mastertable_no_prop_all.pckl", "rb") as f:
     goa_table = goa_table[goa_table["NS"] == "BP"]
     goa_table = goa_table[goa_table["enrichment"] == "e"]
 
+# load GO intersection table
+with open("./goa_intersection_table_no_prop_all.pickl", "rb") as f:
+    intersect_table = pickle.load(f)
 
+s = intersect_table.intersection.str.len().sort_values().index
 
-
+intersect_table = intersect_table.reindex(s)
 
 prot_dict = dict()
 for el in goa_table.protein.unique():
@@ -166,13 +170,15 @@ app.layout = html.Div([
               dcc.Graph(id='plotly_graph', figure={"layout": {"height": 700}}),
               get_table()], className="plotly-graph"),
     html.Div(
-        [html.H2(id='goa_output_container', children=[], style={"text-align": "center"}),
-         dcc.Graph(id='goa-graph', figure={"layout": {"width": "100%"}}),
-         html.Div(
-             dbc.Button("Switch mode", id="goa_switch_button", color="light", n_clicks=0,
-                        style={"white-space": "nowrap", "margin": "auto"}),
-             style={"display": "flex", "align-items": "center", "justify-content": "center"})
-         ]
+        [
+            html.H2(id='goa_output_container', children=[], style={"text-align": "center"}),
+            html.H3(id='goa_output_container2', children=[], style={"text-align": "center"}),
+            dcc.Graph(id='goa-graph', figure={"layout": {"width": "100%"}}),
+            html.Div(
+                dbc.Button("Switch mode", id="goa_switch_button", color="light", n_clicks=0,
+                           style={"white-space": "nowrap", "margin": "auto"}),
+                style={"display": "flex", "align-items": "center", "justify-content": "center"})
+        ]
         , className="databox")
 
 ], id="wrapper"
@@ -257,9 +263,11 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
 
 
 @app.callback(
-    [Output(component_id='goa_output_container', component_property='children'),
-     Output(component_id='goa-graph', component_property='figure'),
-     ],
+    [
+        Output(component_id='goa_output_container', component_property='children'),
+        Output(component_id='goa_output_container2', component_property='children'),
+        Output(component_id='goa-graph', component_property='figure'),
+    ],
     [Input(component_id='slct_protein', component_property='value'),
      Input(component_id="slct_cellline", component_property="value"),
      Input(component_id="goa_switch_button", component_property="n_clicks"),
@@ -269,7 +277,6 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
 )
 def update_goanalysis(slct_protein, slct_cellline, nclicks, relayout_data):
     container = "{} GO-terms Intersection Enrichment".format(slct_protein)
-
 
     heatline = []
     names = []
@@ -282,9 +289,10 @@ def update_goanalysis(slct_protein, slct_cellline, nclicks, relayout_data):
                 if protein != slct_protein and cellline != slct_cellline:
                     comp = prot_dict[protein][cellline]
                     wlen = len(sel) + len(comp)
+                    val2 = len(sel.intersection(comp))
+
                     if wlen != 0:
                         val = len(sel.intersection(comp)) / wlen
-                        val2 = len(sel.intersection(comp))
                     else:
                         val = 0
                     heatline.append(val)
@@ -292,9 +300,11 @@ def update_goanalysis(slct_protein, slct_cellline, nclicks, relayout_data):
                     names.append(protein + "-" + cellline)
         if nclicks % 2 == 1:
             heatline = heatline2
+            container2 = "Absolute Values"
+        else:
+            container2 = "Jaccard Index"
 
         heatline = [heatline]
-        heatline2 = [heatline2]
         fig = go.Figure()
         fig.add_trace(
             go.Heatmap(z=heatline, y=[slct_protein + "-" + slct_cellline], x=names, zmin=0, zauto=False,
@@ -321,7 +331,7 @@ def update_goanalysis(slct_protein, slct_cellline, nclicks, relayout_data):
                 relayout_data['yaxis.range[1]']
             ]
 
-    return container, fig
+    return container, container2, fig
 
 
 def get_sum(arr, dif):
