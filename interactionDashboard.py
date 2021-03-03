@@ -50,14 +50,14 @@ for entry in selection:
             ct = 0
 
 # load GO Analysis table
-with open("./goa_mastertable_no_prop_all.pckl", "rb") as f:
+with open("./goa_mastertable_all.pickl", "rb") as f:
     goa_table = pickle.load(f)
     goa_table = goa_table[goa_table["p_fdr_bh"] < 0.05]
     goa_table = goa_table[goa_table["NS"] == "BP"]
     goa_table = goa_table[goa_table["enrichment"] == "e"]
 
 # load GO intersection table
-with open("./goa_intersection_table_no_prop_all.pickl", "rb") as f:
+with open("./goa_intersection_table_all.pickl", "rb") as f:
     intersect_table = pickle.load(f)
 
 s = intersect_table.intersection.str.len().sort_values().index
@@ -78,6 +78,9 @@ for x in range(len(goa_table)):
     cellline = data["cellline"]
     prot_dict[protein][cellline].add(go_term)
 
+
+with open("id2numbindingsites.pckl", "rb") as f:
+    id2numbs = pickle.load(f)
 # values = []
 # name = []
 # for protein in prot_dict:
@@ -135,7 +138,7 @@ def dropdown_menues():
         dcc.Dropdown(id="slct_protein",
                      options=opts,
                      multi=False,
-                     value="BUD13",
+                     value="UPF1",
                      style=dropdown_style),
         dcc.Dropdown(id="slct_cellline",
                      options=cellline_opts,
@@ -233,10 +236,11 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
     for i in range(len(dff)):
         data = dff.iloc[i]
         interactions = data["interactions"]
+        numbs = id2numbs[data["protein2_id"]]
         if viewmode == 0 and interactions[-1] != 0:
             y = interactions / interactions[-1]
         else:
-            y = interactions
+            y = interactions / numbs
         max_i = data["interactions"][-1]
         name = data["protein2"]
         cellline = data["protein2_cellline"]
@@ -245,6 +249,9 @@ def update_graph(option_slctd, cellline_slctd, region_slctd, inputmin, inputmax,
         diff = np.diff(y)
         diff_window = get_sum(diff, filter_size)
         max_diff = max(diff_window[cutoff:])
+        print(numbs)
+        print(name)
+
         if inputmax >= max_i >= inputmin:
             if max_diff > filter_value:
                 to_plot.append(go.Scatter(x=x_axis, y=y, mode="lines", name=name_ext, hovertext=name_ext,
